@@ -167,9 +167,14 @@ function eventForm(e) {
     <label>Miejsce</label><input name="place" value="${esc(v.place)}">
     <label id="xl">Kategoria / dystans</label><input name="extra" value="${esc(v.extra)}" placeholder="np. Elita 40 km">
     <label>Opis</label><textarea name="descr" rows="3">${esc(v.descr)}</textarea>
+    <label>Uczestnicy</label><div class="hint" style="margin:0 0 6px">Trening: odznacz tych, którzy go nie widzą. Zgrupowanie i wyścig: zaznacz tych, którzy jadą (tylko oni zobaczą wydarzenie).</div>
+    <div class="row"><button type="button" class="btn g s" id="all">Zaznacz wszystkich</button><button type="button" class="btn g s" id="none">Odznacz wszystkich</button></div>
+    <div class="list">${Object.values(profiles).filter(p => p.role === 'zawodnik').map(p => `<label class="chk"><input type="checkbox" data-fp="${p.id}" ${(e ? inc(e, p.id) : v.type === 'trening') ? 'checked' : ''}> ${esc(p.name)}</label>`).join('') || '<div class="m">Brak zawodników</div>'}</div>
     <div class="acts"><button type="button" class="btn g" id="cx">Anuluj</button><button class="btn">Zapisz</button></div></form>`);
   const f = d.querySelector('#ef'), sync = () => { const w = f.type.value === 'wyscig'; d.querySelector('#xl').hidden = f.extra.hidden = !w; };
-  f.type.onchange = sync; sync(); d.querySelector('#cx').onclick = () => d.close();
+  const boxes = () => [...d.querySelectorAll('[data-fp]')], setAll = on => boxes().forEach(b => b.checked = on);
+  f.type.onchange = () => { sync(); if (!e) setAll(f.type.value === 'trening'); }; sync();
+  d.querySelector('#all').onclick = () => setAll(true); d.querySelector('#none').onclick = () => setAll(false); d.querySelector('#cx').onclick = () => d.close();
   f.onsubmit = async ev => {
     ev.preventDefault();
     const o = Object.fromEntries(new FormData(f));
@@ -178,8 +183,12 @@ function eventForm(e) {
     if (o.type !== 'wyscig') o.extra = '';
     const r = e ? await sb.from('events').update(o).eq('id', e.id) : await sb.from('events').insert(o).select().single();
     if (r.error) return alert(r.error.message);
-    d.close(); await loadEvents(); show();
-    if (!e && o.type !== 'trening') eventDetail(r.data.id);
+    const id = e ? e.id : r.data.id, tr = o.type === 'trening';
+    const rows = boxes().filter(b => b.checked === !tr).map(b => ({event_id:id, user_id:b.dataset.fp, state: tr ? 'out' : 'in'}));
+    const w = await sb.from('event_players').delete().eq('event_id', id);
+    const w2 = rows.length ? await sb.from('event_players').insert(rows) : {};
+    if (w.error || w2.error) return alert((w.error || w2.error).message);
+    d.close(); await Promise.all([loadEvents(), loadPlayers()]); show();
   };
 }
 
