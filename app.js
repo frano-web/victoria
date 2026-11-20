@@ -11,7 +11,7 @@ const toInput = iso => { const d = new Date(iso); d.setMinutes(d.getMinutes() - 
 const name = id => profiles[id]?.name || 'Ktoś';
 const isCoach = () => me?.role === 'trener';
 
-let me, profiles = {}, events = [], rsvps = [], msgs = [], tab = 'events', filter = 'all', channel;
+let me, profiles = {}, events = [], rsvps = [], msgs = [], players = [], kits = [], tab = 'events', filter = 'all', channel;
 
 /* ---------- logowanie ---------- */
 function authView(mode = 'in') {
@@ -41,10 +41,13 @@ sb.auth.onAuthStateChange((ev, s) => {
 const loadProfiles = async () => { const {data} = await sb.from('profiles').select('*'); profiles = Object.fromEntries((data || []).map(p => [p.id, p])); };
 const loadEvents = async () => { events = (await sb.from('events').select('*').order('start_at')).data || []; };
 const loadRsvps = async () => { rsvps = (await sb.from('rsvps').select('*')).data || []; };
+const loadPlayers = async () => { players = (await sb.from('event_players').select('*')).data || []; };
+const loadKits = async () => { kits = (await sb.from('kits').select('*').order('created_at')).data || []; };
+const inc = (e, u) => { const s = players.find(p => p.event_id === e.id && p.user_id === u)?.state; return e.type === 'trening' ? s !== 'out' : s === 'in'; };
 const loadMsgs = async () => { msgs = ((await sb.from('messages').select('*').order('created_at', {ascending:false}).limit(200)).data || []).reverse(); };
 
 async function boot(user) {
-  await Promise.all([loadProfiles(), loadEvents(), loadRsvps(), loadMsgs()]);
+  await Promise.all([loadProfiles(), loadEvents(), loadRsvps(), loadMsgs(), loadPlayers(), loadKits()]);
   me = profiles[user.id];
   shell();
   channel?.unsubscribe();
@@ -61,6 +64,14 @@ async function boot(user) {
       if (p.new.user_id !== me.id) notify(name(p.new.user_id), p.new.body);
       refresh();
     })
+    .on('postgres_changes', {event:'*', schema:'public', table:'event_players'}, async p => {
+      await Promise.all([loadPlayers(), loadEvents(), loadRsvps()]);
+      if (p.eventType === 'INSERT' && p.new.user_id === me.id && p.new.state === 'in') {
+        const e = events.find(x => x.id === p.new.event_id); if (e) notify('Jedziesz: ' + e.title, dt(e.start_at));
+      }
+      refresh();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'kits'}, async () => { await loadKits(); refresh(); })
     .subscribe();
 }
 
@@ -72,7 +83,7 @@ function notify(title, body) {
 /* ---------- układ ---------- */
 function shell() {
   app.innerHTML = `<main id="view"></main>
-    <nav>${[['events','Wydarzenia'],['chat','Czat'],['me','Profil']].map(([k,n]) => `<button data-tab="${k}">${n}</button>`).join('')}</nav>
+    <nav>${[['events','Wydarzenia'],['kits','Stroje'],['chat','Czat'],['me','Profil']].map(([k,n]) => `<button data-tab="${k}">${n}</button>`).join('')}</nav>
     ${isCoach() ? '<button class="fab" id="add" aria-label="Dodaj wydarzenie">+</button>' : ''}`;
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; show(); });
   const add = document.getElementById('add'); if (add) add.onclick = () => eventForm();
@@ -83,11 +94,13 @@ function show() {
   const add = document.getElementById('add'); if (add) add.style.display = tab === 'events' ? '' : 'none';
   const v = document.getElementById('view');
   if (tab === 'events') { v.innerHTML = eventsHtml(); bindEvents(v); }
+  else if (tab === 'kits') kitsView(v);
   else if (tab === 'chat') chatView(v);
   else profileView(v);
 }
 function refresh() {
   if (tab === 'events') show();
+  else if (tab === 'kits') show();
   else if (tab === 'chat') paintMsgs();
 }
 
@@ -117,11 +130,11 @@ function dlg(html) {
 function eventDetail(id) {
   const e = events.find(x => x.id === id); if (!e) return;
   const st = u => rs(e).find(r => r.user_id === u)?.status, who = s => Object.values(profiles).filter(p => st(p.id) === s).map(p => `<div>${esc(p.name)}</div>`).join('') || '<div class="m">nikt</div>';
-  const none = Object.values(profiles).filter(p => !st(p.id) && p.role === 'zawodnik').map(p => `<div>${esc(p.name)}</div>`).join('') || '<div class="m">nikt</div>';
+  const none = Object.values(profiles).filter(p => !st(p.id) && p.role === 'zawodnik' && inc(e, p.id)).map(p => `<div>${esc(p.name)}</div>`).join('') || '<div class="m">nikt</div>';
   const d = dlg(`<div class="${e.type}"><h1 style="padding:0">${esc(e.title)}</h1><span class="tag" style="margin:0">${TYPES[e.type]}</span></div>
     <p style="margin-top:10px">${dt(e.start_at)} – ${dt(e.end_at)}</p>${e.place ? `<p>📍 ${esc(e.place)}</p>` : ''}${e.extra ? `<p>${esc(e.extra)}</p>` : ''}${e.descr ? `<p class="m" style="margin-top:8px">${esc(e.descr)}</p>` : ''}
     <div class="acts">${['yes','no'].map(s => `<button class="btn g ${s} ${st(me.id) === s ? 'on' : ''}" data-s="${s}">${s === 'yes' ? 'Będę' : 'Nie będzie mnie'}</button>`).join('')}</div>
-    <h2>Będą</h2><div class="list">${who('yes')}</div><h2>Nie będzie</h2><div class="list">${who('no')}</div><h2>Bez odpowiedzi</h2><div class="list">${none}</div>
+    <h2>Będą</h2><div class="list">${who('yes')}</div><h2>Nie będzie</h2><div class="list">${who('no')}</div>${isCoach() ? `<h2>Bez odpowiedzi</h2><div class="list">${none}</div>${roster(e)}` : ''}
     ${isCoach() ? '<div class="acts"><button class="btn g" id="ed">Edytuj</button><button class="btn d" id="rm">Usuń</button></div>' : ''}`);
   d.querySelectorAll('[data-s]').forEach(b => b.onclick = async () => {
     const s = b.dataset.s;
@@ -130,11 +143,20 @@ function eventDetail(id) {
     if (r.error) return alert(r.error.message);
     await loadRsvps(); d.close(); show(); eventDetail(id);
   });
+  d.querySelectorAll('[data-pl]').forEach(c => c.onchange = async () => {
+    const row = {event_id:id, user_id:c.dataset.pl}, mark = e.type === 'trening' ? !c.checked : c.checked;
+    const r = mark ? await sb.from('event_players').upsert({...row, state: e.type === 'trening' ? 'out' : 'in'}) : await sb.from('event_players').delete().match(row);
+    if (r.error) { c.checked = !c.checked; return alert(r.error.message); }
+    await loadPlayers();
+  });
   if (isCoach()) {
     d.querySelector('#ed').onclick = () => { d.close(); eventForm(e); };
     d.querySelector('#rm').onclick = async () => { if (!confirm('Usunąć to wydarzenie?')) return; const r = await sb.from('events').delete().eq('id', id); if (r.error) return alert(r.error.message); d.close(); await loadEvents(); show(); };
   }
 }
+const roster = e => `<h2>${e.type === 'trening' ? 'Trening dla (odznacz, aby ukryć przed kimś)' : 'Kto jedzie'}</h2>
+  ${e.type === 'trening' ? '' : '<div class="hint">Zawodnik zobaczy to wydarzenie dopiero po zaznaczeniu.</div>'}
+  <div class="list">${Object.values(profiles).filter(p => p.role === 'zawodnik').map(p => `<label class="chk"><input type="checkbox" data-pl="${p.id}" ${inc(e, p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('') || '<div class="m">Brak zawodników</div>'}</div>`;
 function eventForm(e) {
   const v = e || {type:'trening', title:'', start_at:new Date(Date.now() + 864e5).toISOString(), end_at:new Date(Date.now() + 864e5 + 36e5).toISOString(), place:'', extra:'', descr:''};
   const d = dlg(`<h1 style="padding:0">${e ? 'Edytuj wydarzenie' : 'Nowe wydarzenie'}</h1><form id="ef">
@@ -154,9 +176,10 @@ function eventForm(e) {
     o.start_at = new Date(o.start_at).toISOString(); o.end_at = new Date(o.end_at).toISOString();
     if (o.end_at < o.start_at) return alert('Koniec nie może być przed początkiem.');
     if (o.type !== 'wyscig') o.extra = '';
-    const r = e ? await sb.from('events').update(o).eq('id', e.id) : await sb.from('events').insert(o);
+    const r = e ? await sb.from('events').update(o).eq('id', e.id) : await sb.from('events').insert(o).select().single();
     if (r.error) return alert(r.error.message);
     d.close(); await loadEvents(); show();
+    if (!e && o.type !== 'trening') eventDetail(r.data.id);
   };
 }
 
@@ -190,4 +213,36 @@ function profileView(v) {
     const r = await sb.rpc('set_role', {uid:s.dataset.u, r:s.value}); if (r.error) alert(r.error.message);
     await loadProfiles(); show();
   });
+}
+
+/* ---------- stroje ---------- */
+const ITEMS = ['Kombinezon krótki', 'Kombinezon długi', 'Spodenki', 'Koszulka', 'Bluza', 'Kurtka'];
+function kitsView(v) {
+  const ppl = Object.values(profiles).filter(p => p.role === 'zawodnik').sort((a, b) => a.name.localeCompare(b.name, 'pl')), c = isCoach();
+  v.innerHTML = `<h1>Stroje</h1>${c ? '' : '<p class="m" style="margin-bottom:10px">Tylko do wglądu.</p>'}` + (ppl.map(p => {
+    const k = kits.filter(x => x.user_id === p.id);
+    return `<div class="kit"><b>${esc(p.name)}</b>${k.map(x => `<div class="kr ${c ? 'c' : ''}" data-k="${x.id}"><span class="k ${x.given ? 'on' : ''}">${x.given ? '✓' : '○'}</span>
+      <span>${esc(x.item)}${x.size ? ' · <b>' + esc(x.size) + '</b>' : ''}${x.note ? `<div class="m">${esc(x.note)}</div>` : ''}</span></div>`).join('') || '<div class="m">Brak przypisanych strojów</div>'}
+      ${c ? `<button class="link" data-addk="${p.id}">+ Dodaj strój</button>` : ''}</div>`;
+  }).join('') || '<div class="empty">Brak zawodników.</div>');
+  if (!c) return;
+  v.querySelectorAll('[data-k]').forEach(b => b.onclick = () => kitForm(null, kits.find(x => x.id === b.dataset.k)));
+  v.querySelectorAll('[data-addk]').forEach(b => b.onclick = () => kitForm(b.dataset.addk));
+}
+function kitForm(uid, k) {
+  const v = k || {item:'', size:'', note:'', given:true};
+  const d = dlg(`<h1 style="padding:0">${k ? 'Edytuj strój' : 'Nowy strój'}</h1><p class="m">${esc(name(k ? k.user_id : uid))}</p><form id="kf">
+    <label>Strój</label><input name="item" list="items" required value="${esc(v.item)}"><datalist id="items">${ITEMS.map(i => `<option value="${i}">`).join('')}</datalist>
+    <label>Rozmiar</label><input name="size" value="${esc(v.size)}" placeholder="np. M / 164">
+    <label>Notatka</label><input name="note" value="${esc(v.note)}" placeholder="np. do wymiany, zwrot po sezonie">
+    <label class="chk"><input type="checkbox" name="given" ${v.given ? 'checked' : ''}> Wydany zawodnikowi</label>
+    <div class="acts"><button type="button" class="btn g" id="cx">Anuluj</button>${k ? '<button type="button" class="btn d" id="rm">Usuń</button>' : ''}<button class="btn">Zapisz</button></div></form>`);
+  const done = async r => { if (r.error) return alert(r.error.message); d.close(); await loadKits(); show(); };
+  d.querySelector('#cx').onclick = () => d.close();
+  if (k) d.querySelector('#rm').onclick = async () => { if (confirm('Usunąć ten wiersz?')) done(await sb.from('kits').delete().eq('id', k.id)); };
+  d.querySelector('#kf').onsubmit = async ev => {
+    ev.preventDefault(); const f = new FormData(ev.target);
+    const o = {item:f.get('item').trim(), size:f.get('size').trim(), note:f.get('note').trim(), given:f.has('given')};
+    done(k ? await sb.from('kits').update(o).eq('id', k.id) : await sb.from('kits').insert({user_id:uid, ...o}));
+  };
 }

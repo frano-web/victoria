@@ -1,9 +1,9 @@
 # Moja drużyna
 
-Treningi (z zapisami), zgrupowania, wyścigi, czat i powiadomienia. Statyczna strona (GitHub Pages) + Supabase.
+Treningi (z zapisami), zgrupowania, wyścigi (z wyborem uczestników), stroje, czat i powiadomienia. Statyczna strona (GitHub Pages) + Supabase.
 
 ## Uruchomienie
-1. Załóż projekt na supabase.com. W **SQL Editor** wklej i uruchom `supabase/schema.sql`.
+1. Załóż projekt na supabase.com. W **SQL Editor** uruchom po kolei `supabase/schema.sql`, a potem `supabase/update_2.sql` (uczestnicy wydarzeń i stroje).
 2. W **Project Settings → API** skopiuj `Project URL` i klucz `anon public` do `config.js`.
 3. Zarejestruj się w aplikacji, potem w SQL Editor nadaj sobie rolę trenera:
    `update profiles set role='trener' where id=(select id from auth.users where email='TWOJ@EMAIL');`
@@ -14,3 +14,6 @@ Treningi (z zapisami), zgrupowania, wyścigi, czat i powiadomienia. Statyczna st
 ## Uwagi
 - Każdy, kto zna adres, może założyć konto. Dla zamkniętej drużyny wyłącz *Allow new users to sign up* po rejestracji składu.
 - Powiadomienia przychodzą, gdy aplikacja jest otwarta w tle. Push przy zamkniętej aplikacji wymaga Service Workera i Edge Function (nie zrobione).
+- Zgrupowania i wyścigi są widoczne dla zawodnika dopiero po zaznaczeniu go przez trenera (otwórz wydarzenie → „Kto jedzie"). Treningi widzą wszyscy, trener może kogoś odznaczyć.
+- Stroje: trener dodaje wiersze przy każdym zawodniku (strój, rozmiar, notatka, „wydany"). Zawodnicy mają wgląd tylko do odczytu.
+- Ikona ✌️ (folder `icons/`): na telefonie otwórz stronę i wybierz „Dodaj do ekranu głównego". Jeśli ikona się nie zmieniła, usuń skrót i dodaj go ponownie.
