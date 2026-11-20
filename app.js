@@ -54,7 +54,7 @@ async function boot(user) {
   channel = sb.channel('live')
     .on('postgres_changes', {event:'*', schema:'public', table:'events'}, async p => {
       await loadEvents();
-      if (p.eventType === 'INSERT' && p.new.created_by !== me.id) notify('Nowe: ' + p.new.title, dt(p.new.start_at));
+      if (p.eventType === 'INSERT' && p.new.created_by !== me.id && (p.new.type === 'trening' || isCoach())) notify('Nowe: ' + p.new.title, dt(p.new.start_at));
       refresh();
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'rsvps'}, async () => { await loadRsvps(); refresh(); })
@@ -67,7 +67,7 @@ async function boot(user) {
     .on('postgres_changes', {event:'*', schema:'public', table:'event_players'}, async p => {
       await Promise.all([loadPlayers(), loadEvents(), loadRsvps()]);
       if (p.eventType === 'INSERT' && p.new.user_id === me.id && p.new.state === 'in') {
-        const e = events.find(x => x.id === p.new.event_id); if (e) notify('Jedziesz: ' + e.title, dt(e.start_at));
+        const e = events.find(x => x.id === p.new.event_id); if (e) notify('Dotyczy Cię: ' + e.title, dt(e.start_at));
       }
       refresh();
     })
@@ -105,10 +105,11 @@ function refresh() {
 }
 
 /* ---------- wydarzenia ---------- */
+const badge = e => me.role !== 'zawodnik' ? '' : inc(e, me.id) ? '<span class="tag dot">Dotyczy</span>' : '<span class="tag no">Nie dotyczy</span>';
 const rs = e => rsvps.filter(r => r.event_id === e.id);
 function card(e) {
   const mine = rs(e).find(r => r.user_id === me.id)?.status, yes = rs(e).filter(r => r.status === 'yes').length;
-  return `<button class="ev ${e.type}" data-id="${e.id}"><div><b>${esc(e.title)}</b><span class="tag">${TYPES[e.type]}</span>
+  return `<button class="ev ${e.type}${me.role === 'zawodnik' && !inc(e, me.id) ? ' na' : ''}" data-id="${e.id}"><div><b>${esc(e.title)}</b><span class="tag">${TYPES[e.type]}</span>${badge(e)}
     <div class="m">${dt(e.start_at)}${e.type !== 'trening' ? ' – ' + dt(e.end_at) : ''}${e.place ? ' · ' + esc(e.place) : ''}${e.extra ? ' · ' + esc(e.extra) : ''}</div>
     <div class="ok">Zgłoszeni: ${yes}${mine ? ' · Ty: ' + (mine === 'yes' ? 'będę' : 'nie będzie mnie') : ''}</div></div></button>`;
 }
@@ -131,9 +132,9 @@ function eventDetail(id) {
   const e = events.find(x => x.id === id); if (!e) return;
   const st = u => rs(e).find(r => r.user_id === u)?.status, who = s => Object.values(profiles).filter(p => st(p.id) === s).map(p => `<div>${esc(p.name)}</div>`).join('') || '<div class="m">nikt</div>';
   const none = Object.values(profiles).filter(p => !st(p.id) && p.role === 'zawodnik' && inc(e, p.id)).map(p => `<div>${esc(p.name)}</div>`).join('') || '<div class="m">nikt</div>';
-  const d = dlg(`<div class="${e.type}"><h1 style="padding:0">${esc(e.title)}</h1><span class="tag" style="margin:0">${TYPES[e.type]}</span></div>
+  const d = dlg(`<div class="${e.type}"><h1 style="padding:0">${esc(e.title)}</h1><span class="tag" style="margin:0">${TYPES[e.type]}</span>${badge(e)}</div>
     <p style="margin-top:10px">${dt(e.start_at)} – ${dt(e.end_at)}</p>${e.created_by ? `<p class="m">Dodał: ${esc(name(e.created_by))}</p>` : ''}${e.place ? `<p>📍 ${esc(e.place)}</p>` : ''}${e.extra ? `<p>${esc(e.extra)}</p>` : ''}${e.descr ? `<p class="m" style="margin-top:8px">${esc(e.descr)}</p>` : ''}
-    <div class="acts">${['yes','no'].map(s => `<button class="btn g ${s} ${st(me.id) === s ? 'on' : ''}" data-s="${s}">${s === 'yes' ? 'Będę' : 'Nie będzie mnie'}</button>`).join('')}</div>
+    ${me.role === 'zawodnik' && !inc(e, me.id) ? '<div class="hint">To wydarzenie Cię nie dotyczy.</div>' : `<div class="acts">${['yes','no'].map(s => `<button class="btn g ${s} ${st(me.id) === s ? 'on' : ''}" data-s="${s}">${s === 'yes' ? 'Będę' : 'Nie będzie mnie'}</button>`).join('')}</div>`}
     <h2>Będą</h2><div class="list">${who('yes')}</div><h2>Nie będzie</h2><div class="list">${who('no')}</div>${isCoach() ? `<h2>Bez odpowiedzi</h2><div class="list">${none}</div>${roster(e)}` : ''}
     ${isCoach() ? '<div class="acts"><button class="btn g" id="ed">Edytuj</button><button class="btn d" id="rm">Usuń</button></div>' : ''}`);
   d.querySelectorAll('[data-s]').forEach(b => b.onclick = async () => {
@@ -154,8 +155,8 @@ function eventDetail(id) {
     d.querySelector('#rm').onclick = async () => { if (!confirm('Usunąć to wydarzenie?')) return; const r = await sb.from('events').delete().eq('id', id); if (r.error) return alert(r.error.message); d.close(); await loadEvents(); show(); };
   }
 }
-const roster = e => `<h2>${e.type === 'trening' ? 'Trening dla (odznacz, aby ukryć przed kimś)' : 'Kto jedzie'}</h2>
-  ${e.type === 'trening' ? '' : '<div class="hint">Zawodnik zobaczy to wydarzenie dopiero po zaznaczeniu.</div>'}
+const roster = e => `<h2>Kogo dotyczy</h2>
+  
   <div class="list">${Object.values(profiles).filter(p => p.role === 'zawodnik').map(p => `<label class="chk"><input type="checkbox" data-pl="${p.id}" ${inc(e, p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('') || '<div class="m">Brak zawodników</div>'}</div>`;
 function eventForm(e) {
   const v = e || {type:'trening', title:'', start_at:new Date(Date.now() + 864e5).toISOString(), end_at:new Date(Date.now() + 864e5 + 36e5).toISOString(), place:'', extra:'', descr:''};
@@ -167,7 +168,7 @@ function eventForm(e) {
     <label>Miejsce</label><input name="place" value="${esc(v.place)}">
     <label id="xl">Kategoria / dystans</label><input name="extra" value="${esc(v.extra)}" placeholder="np. Elita 40 km">
     <label>Opis</label><textarea name="descr" rows="3">${esc(v.descr)}</textarea>
-    <label>Uczestnicy</label><div class="hint" style="margin:0 0 6px">Trening: odznacz tych, którzy go nie widzą. Zgrupowanie i wyścig: zaznacz tych, którzy jadą (tylko oni zobaczą wydarzenie).</div>
+    <label>Uczestnicy</label><div class="hint" style="margin:0 0 6px">Zaznaczeni zobaczą „Dotyczy”, pozostali „Nie dotyczy”. Trening: domyślnie wszyscy. Zgrupowanie i wyścig: domyślnie nikt.</div>
     <div class="row"><button type="button" class="btn g s" id="all">Zaznacz wszystkich</button><button type="button" class="btn g s" id="none">Odznacz wszystkich</button></div>
     <div class="list">${Object.values(profiles).filter(p => p.role === 'zawodnik').map(p => `<label class="chk"><input type="checkbox" data-fp="${p.id}" ${(e ? inc(e, p.id) : v.type === 'trening') ? 'checked' : ''}> ${esc(p.name)}</label>`).join('') || '<div class="m">Brak zawodników</div>'}</div>
     <div class="acts"><button type="button" class="btn g" id="cx">Anuluj</button><button class="btn">Zapisz</button></div></form>`);

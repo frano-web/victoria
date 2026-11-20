@@ -35,3 +35,4 @@ label.chk{display:flex;gap:10px;align-items:center;font-size:16px;color:var(--tx
 .kr{display:flex;gap:10px;padding:6px 0;align-items:flex-start}.kr.c{cursor:pointer}.k{color:var(--mut)}.k.on{color:var(--ok)}
 .hint{background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:10px;font-size:14px;color:var(--mut);margin-top:12px}
 .btn.s{padding:8px 12px;font-size:14px}
+.tag.dot{color:var(--ok);border-color:var(--ok)}.tag.no{color:var(--mut);border-color:var(--mut)}.ev.na{opacity:.55}
