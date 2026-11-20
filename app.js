@@ -54,7 +54,7 @@ async function boot(user) {
   channel = sb.channel('live')
     .on('postgres_changes', {event:'*', schema:'public', table:'events'}, async p => {
       await loadEvents();
-      if (p.eventType === 'INSERT') notify('Nowe: ' + p.new.title, dt(p.new.start_at));
+      if (p.eventType === 'INSERT' && p.new.created_by !== me.id) notify('Nowe: ' + p.new.title, dt(p.new.start_at));
       refresh();
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'rsvps'}, async () => { await loadRsvps(); refresh(); })
@@ -132,7 +132,7 @@ function eventDetail(id) {
   const st = u => rs(e).find(r => r.user_id === u)?.status, who = s => Object.values(profiles).filter(p => st(p.id) === s).map(p => `<div>${esc(p.name)}</div>`).join('') || '<div class="m">nikt</div>';
   const none = Object.values(profiles).filter(p => !st(p.id) && p.role === 'zawodnik' && inc(e, p.id)).map(p => `<div>${esc(p.name)}</div>`).join('') || '<div class="m">nikt</div>';
   const d = dlg(`<div class="${e.type}"><h1 style="padding:0">${esc(e.title)}</h1><span class="tag" style="margin:0">${TYPES[e.type]}</span></div>
-    <p style="margin-top:10px">${dt(e.start_at)} – ${dt(e.end_at)}</p>${e.place ? `<p>📍 ${esc(e.place)}</p>` : ''}${e.extra ? `<p>${esc(e.extra)}</p>` : ''}${e.descr ? `<p class="m" style="margin-top:8px">${esc(e.descr)}</p>` : ''}
+    <p style="margin-top:10px">${dt(e.start_at)} – ${dt(e.end_at)}</p>${e.created_by ? `<p class="m">Dodał: ${esc(name(e.created_by))}</p>` : ''}${e.place ? `<p>📍 ${esc(e.place)}</p>` : ''}${e.extra ? `<p>${esc(e.extra)}</p>` : ''}${e.descr ? `<p class="m" style="margin-top:8px">${esc(e.descr)}</p>` : ''}
     <div class="acts">${['yes','no'].map(s => `<button class="btn g ${s} ${st(me.id) === s ? 'on' : ''}" data-s="${s}">${s === 'yes' ? 'Będę' : 'Nie będzie mnie'}</button>`).join('')}</div>
     <h2>Będą</h2><div class="list">${who('yes')}</div><h2>Nie będzie</h2><div class="list">${who('no')}</div>${isCoach() ? `<h2>Bez odpowiedzi</h2><div class="list">${none}</div>${roster(e)}` : ''}
     ${isCoach() ? '<div class="acts"><button class="btn g" id="ed">Edytuj</button><button class="btn d" id="rm">Usuń</button></div>' : ''}`);
