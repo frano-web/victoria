@@ -44,3 +44,5 @@ nav button{font-size:13px;padding:10px 2px}
 .ce{width:100%;background:var(--c);color:#fff;border:0;border-radius:5px;padding:2px 3px;font:inherit;font-size:10px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
 .ce.trening{--c:#3a63ff}.ce.zgrupowanie{--c:#f5a524;color:#241600}.ce.wyscig{--c:#ff4d6a}
 .cd.past .ce{background:#343a52;color:#98a1bf}.ce.na{opacity:.45}.cd.past .cn{opacity:.7}
+nav{gap:2px;padding-left:4px;padding-right:4px}
+nav button{flex:1 1 0;min-width:0;max-width:none;font-size:12px;padding:10px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
