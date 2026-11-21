@@ -126,7 +126,8 @@ function bindEvents(v) {
   v.querySelectorAll('[data-id]').forEach(b => b.onclick = () => eventDetail(b.dataset.id));
 }
 function dlg(html) {
-  const d = document.createElement('dialog'); d.innerHTML = html; document.body.append(d); d.showModal();
+  const d = document.createElement('dialog'); d.innerHTML = '<button type="button" class="x" aria-label="Zamknij">✕</button>' + html; document.body.append(d); d.showModal();
+  d.querySelector('.x').onclick = () => d.close();
   d.onclose = () => d.remove(); d.onclick = e => { if (e.target === d) d.close(); }; return d;
 }
 function eventDetail(id) {
