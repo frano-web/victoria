@@ -83,29 +83,31 @@ function notify(title, body) {
 /* ---------- układ ---------- */
 function shell() {
   app.innerHTML = `<main id="view"></main>
-    <nav>${[['events','Wydarzenia'],['kits','Stroje'],['chat','Czat'],['me','Profil']].map(([k,n]) => `<button data-tab="${k}">${n}</button>`).join('')}</nav>
+    <nav>${[['events','Wydarzenia'],['cal','Kalendarz'],['kits','Stroje'],['chat','Czat'],['me','Profil']].map(([k,n]) => `<button data-tab="${k}">${n}</button>`).join('')}</nav>
     ${isCoach() ? '<button class="fab" id="add" aria-label="Dodaj wydarzenie">+</button>' : ''}`;
-  app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; show(); });
+  app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; show(true); });
   const add = document.getElementById('add'); if (add) add.onclick = () => eventForm();
   show();
 }
-function show() {
+function show(scroll) {
   app.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const add = document.getElementById('add'); if (add) add.style.display = tab === 'events' ? '' : 'none';
+  const add = document.getElementById('add'); if (add) add.style.display = tab === 'events' || tab === 'cal' ? '' : 'none';
   const v = document.getElementById('view');
   if (tab === 'events') { v.innerHTML = eventsHtml(); bindEvents(v); }
+  else if (tab === 'cal') calView(v, scroll);
   else if (tab === 'kits') kitsView(v);
   else if (tab === 'chat') chatView(v);
   else profileView(v);
 }
 function refresh() {
   if (tab === 'events') show();
-  else if (tab === 'kits') show();
+  else if (tab === 'kits' || tab === 'cal') show();
   else if (tab === 'chat') paintMsgs();
 }
 
 /* ---------- wydarzenia ---------- */
 const badge = e => me.role !== 'zawodnik' ? '' : inc(e, me.id) ? '<span class="tag dot">Dotyczy</span>' : '<span class="tag no">Nie dotyczy</span>';
+const endOfDay = iso => { const d = new Date(iso); d.setHours(23, 59, 59, 999); return d; };
 const rs = e => rsvps.filter(r => r.event_id === e.id);
 function card(e) {
   const mine = rs(e).find(r => r.user_id === me.id)?.status, yes = rs(e).filter(r => r.status === 'yes').length;
@@ -115,10 +117,9 @@ function card(e) {
 }
 function eventsHtml() {
   const now = new Date().toISOString(), l = events.filter(e => filter === 'all' || e.type === filter);
-  const up = l.filter(e => e.end_at >= now), past = l.filter(e => e.end_at < now).reverse().slice(0, 10);
+  const up = l.filter(e => endOfDay(e.end_at) >= new Date());
   return `<h1>Wydarzenia</h1><div class="chips">${[['all','Wszystko'], ...Object.entries(PLUR)].map(([k,n]) => `<button class="chip ${filter === k ? 'on' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
-    ${up.map(card).join('') || '<div class="empty">Brak nadchodzących wydarzeń.</div>'}
-    ${past.length ? '<h2>Minione</h2>' + past.map(card).join('') : ''}`;
+    ${up.map(card).join('') || '<div class="empty">Brak nadchodzących wydarzeń.</div>'}`;
 }
 function bindEvents(v) {
   v.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filter = b.dataset.f; show(); });
@@ -223,6 +224,37 @@ function profileView(v) {
     const r = await sb.rpc('set_role', {uid:s.dataset.u, r:s.value}); if (r.error) alert(r.error.message);
     await loadProfiles(); show();
   });
+}
+
+/* ---------- kalendarz ---------- */
+const DOW = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb', 'Nd'], MONS = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+const dkey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const monday = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return x; };
+function calView(v, scroll) {
+  const tk = dkey(new Date());
+  let a = monday(new Date()), z = monday(new Date());
+  a.setDate(a.getDate() - 56); z.setDate(z.getDate() + 26 * 7);
+  events.forEach(e => { const s = monday(e.start_at), t = monday(e.end_at); if (s < a) a = s; if (t > z) z = t; });
+  const byDay = {};
+  events.filter(e => filter === 'all' || e.type === filter).forEach(e => {
+    const d = new Date(e.start_at), end = new Date(e.end_at); d.setHours(0, 0, 0, 0); end.setHours(0, 0, 0, 0);
+    for (let i = 0; d <= end && i < 60; i++, d.setDate(d.getDate() + 1)) (byDay[dkey(d)] ||= []).push(e);
+  });
+  let h = `<h1>Kalendarz</h1><div class="chips">${[['all', 'Wszystko'], ...Object.entries(PLUR)].map(([k, n]) => `<button class="chip ${filter === k ? 'on' : ''}" data-f="${k}">${n}</button>`).join('')}</div>`, lastM = '';
+  for (const w = new Date(a); w <= z; w.setDate(w.getDate() + 7)) {
+    const days = [...Array(7)].map((_, i) => { const d = new Date(w); d.setDate(w.getDate() + i); return d; });
+    const m = days[3].toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'});
+    if (m !== lastM) { h += `<h2>${m}</h2>`; lastM = m; }
+    h += `<div class="wk ${days.some(d => dkey(d) === tk) ? 'cur' : ''}">${days.map((d, i) => {
+      const k = dkey(d);
+      return `<div class="cd ${k === tk ? 'today' : ''} ${k < tk ? 'past' : ''}"><div class="cn"><small>${DOW[i]}</small><b>${d.getDate()}</b><small>${k === tk ? 'dziś' : MONS[d.getMonth()]}</small></div>
+        ${(byDay[k] || []).map(e => `<button class="ce ${e.type}${me.role === 'zawodnik' && !inc(e, me.id) ? ' na' : ''}" data-id="${e.id}">${esc(e.title)}</button>`).join('')}</div>`;
+    }).join('')}</div>`;
+  }
+  v.innerHTML = h;
+  v.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filter = b.dataset.f; show(); });
+  v.querySelectorAll('[data-id]').forEach(b => b.onclick = () => eventDetail(b.dataset.id));
+  if (scroll) v.querySelector('.wk.cur')?.scrollIntoView({block: 'center'});
 }
 
 /* ---------- stroje ---------- */
