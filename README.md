@@ -15,6 +15,7 @@ Treningi (z zapisami), zgrupowania, wyścigi (z wyborem uczestników), stroje, c
 - Każdy, kto zna adres, może założyć konto. Dla zamkniętej drużyny wyłącz *Allow new users to sign up* po rejestracji składu.
 - Powiadomienia przychodzą, gdy aplikacja jest otwarta w tle. Push przy zamkniętej aplikacji wymaga Service Workera i Edge Function (nie zrobione).
 - Wszyscy widzą wszystkie wydarzenia. Przy każdym zawodnik widzi „Dotyczy” lub „Nie dotyczy” (trener zaznacza uczestników w formularzu). Treningi domyślnie dotyczą wszystkich, zgrupowania i wyścigi nikogo, dopóki trener nie zaznaczy.
-- Kolejność SQL: `schema.sql`, `update_2.sql`, `update_3.sql`.
+- Kolejność SQL: `schema.sql`, `update_2.sql`, `update_3.sql`, `update_4.sql`.
+- Przy pierwszym logowaniu nowa osoba wybiera: zawodnik albo rodzic (jednorazowo). Rodzic widzi wszystko, ale nic nie może zmieniać (blokuje to baza). Trenerem zostaje się tylko z ręki trenera (Profil).
 - Stroje: trener dodaje wiersze przy każdym zawodniku (strój, rozmiar, notatka, „wydany"). Zawodnicy mają wgląd tylko do odczytu.
 - Ikona ✌️ (folder `icons/`): na telefonie otwórz stronę i wybierz „Dodaj do ekranu głównego". Jeśli ikona się nie zmieniła, usuń skrót i dodaj go ponownie.

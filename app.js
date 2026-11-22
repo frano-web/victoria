@@ -49,7 +49,7 @@ const loadMsgs = async () => { msgs = ((await sb.from('messages').select('*').or
 async function boot(user) {
   await Promise.all([loadProfiles(), loadEvents(), loadRsvps(), loadMsgs(), loadPlayers(), loadKits()]);
   me = profiles[user.id];
-  shell();
+  me.chosen || me.role === 'trener' ? shell() : roleView();
   channel?.unsubscribe();
   channel = sb.channel('live')
     .on('postgres_changes', {event:'*', schema:'public', table:'events'}, async p => {
@@ -73,6 +73,16 @@ async function boot(user) {
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'kits'}, async () => { await loadKits(); refresh(); })
     .subscribe();
+}
+
+function roleView() {
+  app.innerHTML = `<main class="auth"><h1>Kim jesteś?</h1><p class="m">Wybór jest jednorazowy. Zmienić go może tylko trener.</p>
+    <button class="btn" data-r="zawodnik">Jestem zawodnikiem</button><button class="btn g" data-r="rodzic">Jestem rodzicem (tylko podgląd)</button><p class="err" id="err"></p></main>`;
+  app.querySelectorAll('[data-r]').forEach(b => b.onclick = async () => {
+    const r = await sb.rpc('choose_role', {r: b.dataset.r});
+    if (r.error) return document.getElementById('err').textContent = r.error.message;
+    await loadProfiles(); me = profiles[me.id]; shell();
+  });
 }
 
 /* ---------- powiadomienia (działają, gdy aplikacja jest otwarta w tle) ---------- */
@@ -100,6 +110,7 @@ function show(scroll) {
   else profileView(v);
 }
 function refresh() {
+  if (!document.getElementById('view')) return;
   if (tab === 'events') show();
   else if (tab === 'kits' || tab === 'cal') show();
   else if (tab === 'chat') paintMsgs();
@@ -136,8 +147,8 @@ function eventDetail(id) {
   const none = Object.values(profiles).filter(p => !st(p.id) && p.role === 'zawodnik' && inc(e, p.id)).map(p => `<div>${esc(p.name)}</div>`).join('') || '<div class="m">nikt</div>';
   const d = dlg(`<div class="${e.type}"><h1 style="padding:0">${esc(e.title)}</h1><span class="tag" style="margin:0">${TYPES[e.type]}</span>${badge(e)}</div>
     <p style="margin-top:10px">${dt(e.start_at)} – ${dt(e.end_at)}</p>${e.created_by ? `<p class="m">Dodał: ${esc(name(e.created_by))}</p>` : ''}${e.place ? `<p>📍 ${esc(e.place)}</p>` : ''}${e.extra ? `<p>${esc(e.extra)}</p>` : ''}${e.descr ? `<p class="m" style="margin-top:8px">${esc(e.descr)}</p>` : ''}
-    ${me.role === 'zawodnik' && !inc(e, me.id) ? '<div class="hint">To wydarzenie Cię nie dotyczy.</div>' : `<div class="acts">${['yes','no'].map(s => `<button class="btn g ${s} ${st(me.id) === s ? 'on' : ''}" data-s="${s}">${s === 'yes' ? 'Będę' : 'Nie będzie mnie'}</button>`).join('')}</div>`}
-    <h2>Będą</h2><div class="list">${who('yes')}</div><h2>Nie będzie</h2><div class="list">${who('no')}</div>${isCoach() ? `<h2>Bez odpowiedzi</h2><div class="list">${none}</div>${roster(e)}` : ''}
+    ${me.role === 'rodzic' ? '' : me.role === 'zawodnik' && !inc(e, me.id) ? '<div class="hint">To wydarzenie Cię nie dotyczy.</div>' : `<div class="acts">${['yes','no'].map(s => `<button class="btn g ${s} ${st(me.id) === s ? 'on' : ''}" data-s="${s}">${s === 'yes' ? 'Będę' : 'Nie będzie mnie'}</button>`).join('')}</div>`}
+    <h2>Będą</h2><div class="list">${who('yes')}</div><h2>Nie będzie</h2><div class="list">${who('no')}</div>${isCoach() || me.role === 'rodzic' ? `<h2>Bez odpowiedzi</h2><div class="list">${none}</div>${roster(e)}` : ''}
     ${isCoach() ? '<div class="acts"><button class="btn g" id="ed">Edytuj</button><button class="btn d" id="rm">Usuń</button></div>' : ''}`);
   d.querySelectorAll('[data-s]').forEach(b => b.onclick = async () => {
     const s = b.dataset.s;
@@ -159,7 +170,7 @@ function eventDetail(id) {
 }
 const roster = e => `<h2>Kogo dotyczy</h2>
   
-  <div class="list">${Object.values(profiles).filter(p => p.role === 'zawodnik').map(p => `<label class="chk"><input type="checkbox" data-pl="${p.id}" ${inc(e, p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('') || '<div class="m">Brak zawodników</div>'}</div>`;
+  <div class="list">${Object.values(profiles).filter(p => p.role === 'zawodnik').map(p => `<label class="chk"><input type="checkbox" data-pl="${p.id}" ${inc(e, p.id) ? 'checked' : ''} ${isCoach() ? '' : 'disabled'}> ${esc(p.name)}</label>`).join('') || '<div class="m">Brak zawodników</div>'}</div>`;
 function eventForm(e) {
   const v = e || {type:'trening', title:'', start_at:new Date(Date.now() + 864e5).toISOString(), end_at:new Date(Date.now() + 864e5 + 36e5).toISOString(), place:'', extra:'', descr:''};
   const d = dlg(`<h1 style="padding:0">${e ? 'Edytuj wydarzenie' : 'Nowe wydarzenie'}</h1><form id="ef">
@@ -200,6 +211,7 @@ function chatView(v) {
   v.innerHTML = `<h1>Czat drużyny</h1><div class="chat"><div id="msgs"></div>
     <form class="send" id="sf"><input name="body" placeholder="Napisz wiadomość…" autocomplete="off" maxlength="2000" required><button class="btn">Wyślij</button></form></div>`;
   paintMsgs(true);
+  if (me.role === 'rodzic') { document.getElementById('sf').innerHTML = '<p class="m">Czat tylko do odczytu.</p>'; return; }
   document.getElementById('sf').onsubmit = async e => {
     e.preventDefault(); const i = e.target.body, body = i.value.trim(); if (!body) return;
     i.value = ''; const r = await sb.from('messages').insert({body}); if (r.error) { i.value = body; alert(r.error.message); }
@@ -218,7 +230,7 @@ function profileView(v) {
   v.innerHTML = `<h1>Profil</h1><div class="pl"><div><b>${esc(me.name)}</b><div class="m">${me.role}</div></div><button class="btn g" id="lo">Wyloguj</button></div>
     ${perm !== 'granted' && perm !== 'denied' ? '<button class="btn" id="np" style="width:100%">Włącz powiadomienia</button>' : `<p class="m">Powiadomienia: ${perm === 'granted' ? 'włączone' : 'zablokowane w ustawieniach przeglądarki'}</p>`}
     ${isCoach() ? `<h2>Osoby w drużynie</h2>${Object.values(profiles).map(p => `<div class="pl"><span>${esc(p.name)}</span>
-      <select data-u="${p.id}" ${p.id === me.id ? 'disabled' : ''}><option value="zawodnik" ${p.role === 'zawodnik' ? 'selected' : ''}>zawodnik</option><option value="trener" ${p.role === 'trener' ? 'selected' : ''}>trener</option></select></div>`).join('')}` : ''}`;
+      <select data-u="${p.id}" ${p.id === me.id ? 'disabled' : ''}><option value="zawodnik" ${p.role === 'zawodnik' ? 'selected' : ''}>zawodnik</option><option value="rodzic" ${p.role === 'rodzic' ? 'selected' : ''}>rodzic</option><option value="trener" ${p.role === 'trener' ? 'selected' : ''}>trener</option></select></div>`).join('')}` : ''}`;
   document.getElementById('lo').onclick = () => sb.auth.signOut();
   const np = document.getElementById('np'); if (np) np.onclick = async () => { await Notification.requestPermission(); show(); };
   v.querySelectorAll('[data-u]').forEach(s => s.onchange = async () => {
